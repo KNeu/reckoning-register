@@ -13,7 +13,7 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 | `issue` | string | yes | Issue number as a zero-padded string, e.g. `01`. |
 | `date_logged` | string | yes | ISO 8601 date, `YYYY-MM-DD`. The date the claim was published, not the date it was drafted. |
 | `claim` | string | yes | One sentence. Unambiguous. Must pass the claim wording test below. |
-| `probability` | number \| string | yes | Float in `[0,1]`, or the literal string `TBD_KEVIN`. Claude always writes `TBD_KEVIN`. |
+| `probability` | number \| string | yes | Float in `[0,1]`, or the literal string `TBD_KEVIN`. Claude always writes `TBD_KEVIN`. **Stored precise, rendered rounded**: the entry keeps the model's number (`0.634`); every page and issue shows it to the nearest 5% (`65%`), never a decimal. Brier is computed on the stored number. |
 | `resolution_date` | string | yes | ISO 8601. The date the claim gets graded, whether or not the outcome is obvious by then. |
 | `falsifier` | string | yes | The observation that would resolve this false. Must be observable, dated, and sourced. |
 | `resolution_source` | string | yes | Where the resolving fact will be checked. Name the specific source, not a category. |
@@ -21,6 +21,9 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 | `resolved_on` | string \| null | yes | ISO 8601 once resolved, else `null`. |
 | `brier` | number \| null | yes | Brier score once resolved, else `null`. `(p - outcome)^2`, outcome ∈ {0,1}. |
 | `notes` | string | yes | Reasoning, evidence summary, and any caveat. May be empty string. |
+| `method` | enum | yes | `MC` (Monte Carlo) or `RC` (reference class). Exactly one, with its matching sub-field below. Grading is method-blind: one Brier number over all resolved entries, never a per-method score. |
+| `inputs` | string | with `MC` | One line naming the modelled variables and their sources. The model stays private; only the input names are published. |
+| `reference_class` | string | with `RC` | One line naming the base-rate population and the adjustment applied. |
 | `sector` | enum | yes | `space` \| `defense` \| `energy` \| `cross`. The publication's scope since 13 Sep 2026; Brier is reported by sector as well as overall. `cross` only where the claim genuinely spans sectors. |
 | `supersedes` | string | no | The `id` of an entry this corrects. Present only on correcting entries. |
 | `resolution_urls` | list of strings | no | The concrete pages the resolution will be checked against. `scripts/snapshot_resolution_sources.py` archives and renders each one into `evidence/<id>/` with hashes, monthly and on logging. `resolution_source` remains the prose a reader sees. |
