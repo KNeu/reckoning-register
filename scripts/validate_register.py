@@ -31,13 +31,84 @@ SECTORS = {"space", "defense", "energy", "cross"}
 # are part of the record and locked by the same append-only rule as the English.
 # resolution_urls: the concrete pages scripts/snapshot_resolution_sources.py archives and renders
 # as evidence; resolution_source stays the reader-facing prose.
-OPTIONAL = ["supersedes", "claim_es", "falsifier_es", "resolution_urls", "inputs", "reference_class"]
+OPTIONAL = ["supersedes", "claim_es", "falsifier_es", "resolution_urls", "inputs", "reference_class",
+            "inputs_es", "reference_class_es"]
 STATUSES = {"open", "resolved_true", "resolved_false", "void"}
 RESOLVED = {"resolved_true", "resolved_false"}
 
 ID_RE = re.compile(r"^\d{4}-\d{2}-\d{3}$")
+
+# Recusal (disclosure policy tier 4, extended 15 Sep 2026). The private position record,
+# disclosure/positions.json, is gitignored and read here only if present. An entry whose
+# claim names a company under `vehicle_commitments` (a syndicate, SPV or fund commitment,
+# from the date of commitment, closed or not) or under `restricted` fails: no forecast on it,
+# whatever the issue says. RECKONING_POSITIONS overrides the path (tests seed a conflict).
+import os
+POSITIONS = os.environ.get("RECKONING_POSITIONS", "disclosure/positions.json")
+
+
+def recusal_names():
+    """(name, reason) pairs from the private record; empty only when the file is absent.
+
+    Reads the `positions` array, which is the shape the record actually has: one object per
+    position carrying `recused`, `recused_from` and `vehicle`. It still reads the older
+    top-level `vehicle_commitments` and `restricted` lists as well, so a record written to
+    the earlier shape does not quietly stop being enforced.
+
+    Silence is the failure this guards against. Until 21 Sep 2026 the function read only those
+    two top-level lists. The record has neither — it has `positions` — so it returned nothing,
+    and every claim passed the recusal check. A tier-4 control that reports green and enforces
+    nothing is worse than no control, because it is trusted. If the file is present and no
+    recognised shape is found, that is now an error rather than a pass.
+    """
+    try:
+        with open(POSITIONS) as fh:
+            rec = json.load(fh)
+    except FileNotFoundError:
+        return []
+    except json.JSONDecodeError as e:
+        return [("", f"{POSITIONS} is not valid JSON ({e})")]
+    out = []
+    for p in rec.get("positions", []) or []:
+        name = str(p.get("name", "")).strip()
+        if not name or not p.get("recused"):
+            continue
+        why = "recused position"
+        if p.get("recused_from"):
+            why += f", recused from {p['recused_from']}"
+        if p.get("vehicle"):
+            why += f" ({p['vehicle']})"
+        out.append((name, why))
+    for v in rec.get("vehicle_commitments", []) or []:
+        name = str(v.get("name", "")).strip()
+        if name:
+            out.append((name, f"vehicle commitment ({v.get('vehicle', '?')}, committed {v.get('committed_on', '?')}, "
+                              f"{'closed' if v.get('closed') else 'open'})"))
+    for r in rec.get("restricted", []) or []:
+        name = str(r.get("company", "")).strip()
+        if name:
+            out.append((name, "restricted position"))
+    if not any(k in rec for k in ("positions", "vehicle_commitments", "restricted")):
+        return [("", f"{POSITIONS} carries none of 'positions', 'vehicle_commitments' or "
+                     "'restricted' — the recusal check cannot run. Fix the record; do not "
+                     "read this as a pass (disclosure policy, tier 4)")]
+    return out
+
+
+def check_recusal(obj, errors):
+    for name, reason in recusal_names():
+        if not name:
+            errors.append("  " + reason); continue
+        text = " ".join(str(obj.get(k, "")) for k in ("claim", "claim_es", "falsifier", "falsifier_es"))
+        if re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text, re.I):
+            errors.append(f"recusal: claim names {name!r} — {reason}; no forecast on this company "
+                          f"(disclosure policy, tier 4; disclosure/README.md)")
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TBD = "TBD_KEVIN"
+
+# Drafts whose Spanish is not written yet. A draft gap is a note, not an error (an entry is
+# logged in English the day the claim is made); the live register hard-fails on the same gap.
+SPANISH_PENDING = []
 
 # Adjectives that do quantitative work without a number. See the claim wording test.
 WEASEL = [
@@ -133,6 +204,21 @@ def check(obj, lineno, live, seen_ids, errors):
 
     if obj["sector"] not in SECTORS:
         err(f"sector {obj['sector']!r} not in {sorted(SECTORS)}")
+
+    # CLAUDE.md rule 7: every issue ships in Spanish, and register entries are identical across
+    # editions. The renderer falls back to the English string when an `_es` field is absent, so
+    # a gap never breaks a build — it prints English under a Spanish label, which is exactly how
+    # entry 2026-09-003 shipped its Monte Carlo inputs untranslated. Check the fields instead.
+    es_need = ["claim_es", "falsifier_es"]
+    if m in METHODS:
+        es_need.append(METHODS[m] + "_es")
+    missing_es = [f for f in es_need if not str(obj.get(f) or "").strip()]
+    if missing_es:
+        if live:
+            err("missing Spanish field(s): %s — both editions carry the same entry (CLAUDE.md rule 7)"
+                % ", ".join(missing_es))
+        else:
+            SPANISH_PENDING.append((str(obj["id"]), missing_es))
 
     st = obj["status"]
     if st not in STATUSES:
@@ -327,6 +413,7 @@ def validate_grades(grades_path, register_path):
 
 def validate(path, live):
     errors = []
+    SPANISH_PENDING.clear()
     seen_ids = {}
     entries = {}
     try:
@@ -347,6 +434,10 @@ def validate(path, live):
             errors.append(f"  line {i}: invalid JSON: {e}")
             continue
         check(obj, i, live, seen_ids, errors)
+        if isinstance(obj, dict):
+            rec = []
+            check_recusal(obj, rec)
+            errors.extend(f"  line {i}: {m.strip()}" for m in rec)
         if isinstance(obj, dict) and "id" in obj:
             entries[str(obj["id"])] = (i, obj)
 
@@ -358,6 +449,11 @@ def validate(path, live):
         print("\n".join(errors))
         return 1
     print(f"{path}: OK ({count} entr{'y' if count == 1 else 'ies'}, {label} rules)")
+    for eid, fields in SPANISH_PENDING:
+        print(f"  note {eid}: Spanish pending — {', '.join(fields)}")
+    if SPANISH_PENDING:
+        print(f"  {len(SPANISH_PENDING)} draft(s) need Spanish before their issue ships; "
+              f"the live register refuses them as they stand.")
     return 0
 
 
