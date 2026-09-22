@@ -1,6 +1,6 @@
 # The claim register
 
-> **Status (13 September 2026): empty by design.** The register opens with W1 on 15 October 2026, when its first entry is logged with its probability; publication is the timestamp. Until then the drafts live in the working repository with their probability unset. This public mirror carries the claim file, the grade file, the schema below, and the validator, and is updated by `scripts/publish_register.sh` on every append. Site: https://reckoningbrief.com
+> **Status (21 September 2026): open.** The register took its first entries on 21 September 2026 and is append-only from that date. Every line here was logged before its outcome was known, and the commit history of this mirror is the proof of when. Entries are graded on their resolution dates into `grades.jsonl`; a claim line is never edited, not even to record its own grade. This public mirror carries the claim file, the grade file, the schema below, and the validator, and is updated by `scripts/publish_register.sh` on every append. Site: https://reckoningbrief.com
 
 Append-only. One JSON object per line. This file is the brief's core promise: every
 forecast is dated, probability-weighted, falsifiable, and re-graded in public.

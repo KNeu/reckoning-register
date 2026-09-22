@@ -106,6 +106,19 @@ def check_recusal(obj, errors):
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TBD = "TBD_KEVIN"
 
+# Item 8, 21 Sep 2026: every live entry carries a plain-language headline in both editions.
+# The headline is a finding aid and the claim is what gets graded, but a register that shows a
+# headline in one language and nothing in the other is worse than one that shows neither.
+HEADLINES = os.environ.get("RECKONING_HEADLINES", "register/headlines.json")
+
+
+def headline_map():
+    try:
+        with open(HEADLINES) as fh:
+            return json.load(fh).get("entries", {}) or {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
 # Drafts whose Spanish is not written yet. A draft gap is a note, not an error (an entry is
 # logged in English the day the claim is made); the live register hard-fails on the same gap.
 SPANISH_PENDING = []
@@ -209,6 +222,18 @@ def check(obj, lineno, live, seen_ids, errors):
     # editions. The renderer falls back to the English string when an `_es` field is absent, so
     # a gap never breaks a build — it prints English under a Spanish label, which is exactly how
     # entry 2026-09-003 shipped its Monte Carlo inputs untranslated. Check the fields instead.
+    if live:
+        hm = headline_map()
+        if hm is None:
+            err("%s is missing or unreadable — every live entry needs a headline in both editions"
+                % HEADLINES)
+        else:
+            h = hm.get(str(obj["id"])) or {}
+            gaps = [k for k in ("en", "es") if not str(h.get(k) or "").strip()]
+            if gaps:
+                err("no %s headline in %s for %s (see register/headlines.json)"
+                    % (" or ".join(gaps), HEADLINES, obj["id"]))
+
     es_need = ["claim_es", "falsifier_es"]
     if m in METHODS:
         es_need.append(METHODS[m] + "_es")
