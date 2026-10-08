@@ -1,6 +1,6 @@
 # The claim register
 
-> **Status (21 September 2026): open.** The register took its first entries on 21 September 2026 and is append-only from that date. Every line here was logged before its outcome was known, and the commit history of this mirror is the proof of when. Entries are graded on their resolution dates into `grades.jsonl`; a claim line is never edited, not even to record its own grade. This public mirror carries the claim file, the grade file, the schema below, and the validator, and is updated by `scripts/publish_register.sh` on every append. Site: https://reckoningbrief.com
+> **Status (21 September 2026): open.** The register took its first entries on 21 September 2026 and is append-only from that date. Every line here was logged before its outcome was known, and the commit history of this mirror is the proof of when. Entries are graded on their resolution dates into `grades.jsonl`; a claim line is never edited, not even to record its own grade. This public mirror carries the claim file, the grade file, the annotations file, the schema below, and the validator, and is updated by `scripts/publish_register.sh` on every append. Site: https://reckoningbrief.com
 
 Append-only. One JSON object per line. This file is the brief's core promise: every
 forecast is dated, probability-weighted, falsifiable, and re-graded in public.
@@ -62,7 +62,7 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
    | Field | Type | Notes |
    |---|---|---|
    | `entry_id` | string | The claim being graded. Must exist in `register.jsonl`. |
-   | `graded_on` | string | ISO date. Not before the claim's `resolution_date`. |
+   | `graded_on` | string | ISO date. Not before the claim's `resolution_date`, with one exception: an "on or before" claim that has already come true may be graded early (`scripts/grade.py --early "<reason>"`; the reason opens the note). A false or void outcome is never graded early. |
    | `outcome` | enum | `resolved_true` \| `resolved_false` \| `void` |
    | `brier` | number \| null | `(p - outcome)^2` from the claim's own probability. `null` only for `void`. |
    | `observation` | string | What was actually observed, in one sentence. |
@@ -83,6 +83,15 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
    exists for it, and whatever that grade says afterwards. One grade per claim, permanently.
    `scripts/validate_register.py --grades` checks every rule above, including recomputing the
    Brier from the claim's probability rather than trusting the number written down.
+
+   **Annotations append to `register/annotations.jsonl`**, a third append-only file, for dated
+   records about a claim that are neither the claim nor its grade. Fields: `entry_id`, `date`,
+   `type`, `text` (and `text_es`). Three types: `disclosure` (a position disclosed on that
+   entry), `pending_verification` (the resolution date has passed and the outcome is being
+   confirmed; replaced by the grade), and `amendment` (with `field`, currently only
+   `falsifier`, and a `reason`). An amendment never changes the claim, the probability or the
+   date. The claim line stays as logged and the amendment is shown beside it.
+   `scripts/validate_register.py --annotations` checks the file.
 
 6. **Drafts live elsewhere.** Per-issue drafts go in `issues/NN/register-drafts.jsonl`.
    Nothing enters this file until Kevin has set the probability.

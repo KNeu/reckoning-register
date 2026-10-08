@@ -383,7 +383,11 @@ def validate_grades(grades_path, register_path):
         if not iso_ok(g["graded_on"]):
             err(f"graded_on {g['graded_on']!r} is not an ISO date")
         elif iso_ok(claim.get("resolution_date", "")):
-            if date.fromisoformat(g["graded_on"]) < date.fromisoformat(claim["resolution_date"]):
+            # An "on or before" claim that has already come true cannot un-resolve, so it may be
+            # graded early, with the reason recorded (scripts/grade.py --early writes the prefix).
+            # A false or void outcome is never early: until the date, the claim can still come true.
+            early_ok = g["outcome"] == "resolved_true" and str(g.get("note") or "").startswith("Graded early (")
+            if date.fromisoformat(g["graded_on"]) < date.fromisoformat(claim["resolution_date"]) and not early_ok:
                 err(f"graded_on {g['graded_on']} precedes the claim's resolution_date "
                     f"{claim['resolution_date']}. Grade on the date, not before it")
 
@@ -433,6 +437,51 @@ def validate_grades(grades_path, register_path):
         print("\n".join(errors))
         return 1
     print(f"{grades_path}: OK ({count} grade(s), {len(ungraded)} claim(s) still open)")
+    return 0
+
+
+ANNOTATION_TYPES = {"disclosure", "pending_verification", "amendment"}
+AMENDABLE = {"falsifier"}   # an amendment never touches the claim, the probability or the date
+
+
+def validate_annotations(path, register_path):
+    """Dated records about a claim that are neither the claim nor its grade: a per-entry
+    disclosure, a resolution held pending verification, an amendment. Append-only."""
+    errors, ids, count = [], set(), 0
+    try:
+        ids = {str(json.loads(l).get("id")) for l in open(register_path) if l.strip()}
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    try:
+        lines = open(path).readlines()
+    except FileNotFoundError:
+        print(f"{path}: OK (no annotations)")
+        return 0
+    for i, raw in enumerate(lines, 1):
+        if not raw.strip():
+            continue
+        count += 1
+        err = lambda m: errors.append(f"  line {i}: {m}")  # noqa: E731
+        try:
+            a = json.loads(raw)
+        except json.JSONDecodeError as e:
+            err(f"invalid JSON: {e}"); continue
+        for f in ("entry_id", "date", "type", "text"):
+            if not isinstance(a.get(f), str) or not a[f].strip():
+                err(f"{f} must be a non-empty string")
+        if a.get("entry_id") not in ids:
+            err(f"entry_id {a.get('entry_id')!r} is not in {register_path}")
+        if not iso_ok(str(a.get("date", ""))):
+            err(f"date {a.get('date')!r} is not an ISO date")
+        if a.get("type") not in ANNOTATION_TYPES:
+            err(f"type {a.get('type')!r} not in {sorted(ANNOTATION_TYPES)}")
+        if a.get("type") == "amendment" and a.get("field") not in AMENDABLE:
+            err(f"an amendment names the field it amends, one of {sorted(AMENDABLE)}")
+    if errors:
+        print(f"{path}: FAIL ({count} annotation(s))")
+        print("\n".join(errors))
+        return 1
+    print(f"{path}: OK ({count} annotation(s))")
     return 0
 
 
@@ -489,8 +538,12 @@ def main():
                     help="enforce live-register rules (probability must be a number)")
     ap.add_argument("--grades", action="store_true",
                     help="validate register/grades.jsonl against register/register.jsonl")
+    ap.add_argument("--annotations", action="store_true",
+                    help="validate register/annotations.jsonl against register/register.jsonl")
     args = ap.parse_args()
 
+    if args.annotations:
+        return validate_annotations("register/annotations.jsonl", "register/register.jsonl")
     if args.grades:
         if len(args.paths) == 2:
             return validate_grades(args.paths[0], args.paths[1])
