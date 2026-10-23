@@ -497,7 +497,7 @@ def validate_grades(grades_path, register_path):
     return 0
 
 
-ANNOTATION_TYPES = {"disclosure", "pending_verification", "amendment", "void_commitment"}
+ANNOTATION_TYPES = {"disclosure", "pending_verification", "amendment", "void_commitment", "note"}
 AMENDABLE = {"falsifier"}   # an amendment never touches the claim, the probability or the date
 
 

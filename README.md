@@ -13,7 +13,7 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 | `issue` | string | yes | Issue number as a zero-padded string, e.g. `01`. |
 | `date_logged` | string | yes | ISO 8601 date, `YYYY-MM-DD`. The date the claim entered this file, which the git history proves; not the date it was drafted. A forecast first made public elsewhere carries that earlier moment in `first_public_at`, never in this field. |
 | `claim` | string | yes | One sentence. Unambiguous. Must pass the claim wording test below. |
-| `probability` | number \| string | yes | Float in `[0,1]`, or the literal string `TBD_KEVIN`. Claude always writes `TBD_KEVIN`. **Stored precise, rendered rounded**: the entry keeps the model's number (`0.634`); every page and issue shows it to the nearest 5% (`65%`), never a decimal. Brier is computed on the stored number. |
+| `probability` | number \| string | yes | Float in `[0,1]`, or the literal string `TBD_KEVIN`. Claude always writes `TBD_KEVIN`. **Stored precise, rendered rounded**: the entry keeps the model's number (`0.634`); every page and issue shows it to the nearest 5% (`65%`), never a decimal, whatever the method: from 23 Oct 2026 Monte Carlo entries round too (from 11 to 23 Oct they showed their exact number, and W1, published in that window, keeps its 19%). Brier is computed on the stored number. |
 | `resolution_date` | string | yes | ISO 8601. The date the claim gets graded, whether or not the outcome is obvious by then. |
 | `falsifier` | string | yes | The observation that would resolve this false. Must be observable, dated, and sourced. |
 | `resolution_source` | string | yes | Where the resolving fact will be checked. Name the specific source, not a category. |
@@ -88,10 +88,11 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 
    **Annotations append to `register/annotations.jsonl`**, a third append-only file, for dated
    records about a claim that are neither the claim nor its grade. Fields: `entry_id`, `date`,
-   `type`, `text` (and `text_es`). Three types: `disclosure` (a position disclosed on that
+   `type`, `text` (and `text_es`). Types: `disclosure` (a position disclosed on that
    entry), `pending_verification` (the resolution date has passed and the outcome is being
-   confirmed; replaced by the grade), and `amendment` (with `field`, currently only
-   `falsifier`, and a `reason`). An amendment never changes the claim, the probability or the
+   confirmed; replaced by the grade), `amendment` (with `field`, currently only
+   `falsifier`, and a `reason`), `void_commitment` (a sealed number that can no longer be
+   proven), and `note` (a dated note on how an entry is shown, never on what it says). An amendment never changes the claim, the probability or the
    date. The claim line stays as logged and the amendment is shown beside it.
    `scripts/validate_register.py --annotations` checks the file.
 
