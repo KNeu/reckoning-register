@@ -32,7 +32,15 @@ SECTORS = {"space", "defense", "energy", "cross"}
 # resolution_urls: the concrete pages scripts/snapshot_resolution_sources.py archives and renders
 # as evidence; resolution_source stays the reader-facing prose.
 OPTIONAL = ["supersedes", "claim_es", "falsifier_es", "resolution_urls", "inputs", "reference_class",
-            "inputs_es", "reference_class_es"]
+            "inputs_es", "reference_class_es", "probability_commitment",
+            "first_public_url", "first_public_at"]
+# first_public_url / first_public_at (approved 2026-10-22): a forecast first made public
+# elsewhere (an X post, a talk) before it entered this file. date_logged stays the append date —
+# the date the git history proves — and first_public_at records the earlier public moment, so a
+# late-logged entry is never backdated. For an X status URL, first_public_at must equal the time
+# encoded in the status id (Snowflake: ms = (id >> 22) + 1288834974657).
+X_STATUS_RE = re.compile(r"^https://(?:x|twitter)\.com/[A-Za-z0-9_]+/status/(\d+)")
+FIRST_PUBLIC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 STATUSES = {"open", "resolved_true", "resolved_false", "void"}
 RESOLVED = {"resolved_true", "resolved_false"}
 
@@ -176,8 +184,35 @@ def check(obj, lineno, live, seen_ids, errors):
         if date.fromisoformat(obj["resolution_date"]) <= date.fromisoformat(obj["date_logged"]):
             err("resolution_date must be after date_logged")
 
+    fpu, fpa = obj.get("first_public_url"), obj.get("first_public_at")
+    if (fpu is None) != (fpa is None):
+        err("first_public_url and first_public_at come together or not at all")
+    elif fpu is not None:
+        if not isinstance(fpu, str) or not fpu.startswith("https://"):
+            err("first_public_url must be an https:// URL")
+        if not isinstance(fpa, str) or not FIRST_PUBLIC_RE.match(fpa):
+            err(f"first_public_at {fpa!r} must be UTC, YYYY-MM-DDTHH:MM:SSZ")
+        else:
+            if iso_ok(obj["date_logged"]) and date.fromisoformat(fpa[:10]) > date.fromisoformat(obj["date_logged"]):
+                err("first_public_at is after date_logged — first public cannot follow logging")
+            xm = X_STATUS_RE.match(fpu) if isinstance(fpu, str) else None
+            if xm:
+                from datetime import datetime, timezone
+                derived = datetime.fromtimestamp(((int(xm.group(1)) >> 22) + 1288834974657) // 1000,
+                                                 tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if derived != fpa:
+                    err(f"first_public_at {fpa} does not match the time in the status id ({derived})")
+
     p = obj["probability"]
-    if p == TBD:
+    pc = obj.get("probability_commitment")
+    if pc is not None or p is None:
+        # A sealed entry: the number is committed to by hash and published later in
+        # register/reveals.jsonl (scripts/commitments.py). It carries no number of its own.
+        if p is not None:
+            err("a sealed entry carries probability null; its number is published in register/reveals.jsonl")
+        if not isinstance(pc, str) or not re.match(r"^sha256:[0-9a-f]{64}$", pc):
+            err("probability is null, so probability_commitment must be 'sha256:' and 64 hex characters")
+    elif p == TBD:
         if live:
             err(f"probability is {TBD}: Kevin must set a number before this enters the live register")
     elif isinstance(p, bool) or not isinstance(p, (int, float)):
@@ -341,6 +376,26 @@ def validate_grades(grades_path, register_path):
                     pass
     except FileNotFoundError:
         pass
+    # Sealed entries are graded on the number published in reveals.jsonl, beside the register.
+    # A reveal that does not hash to its entry's commitment is an error here too, so this file
+    # checks the same thing scripts/commitments.py does without depending on it.
+    import hashlib
+    revealed = {}
+    try:
+        for n, raw in enumerate(open(os.path.join(os.path.dirname(register_path) or ".", "reveals.jsonl")), 1):
+            if not raw.strip():
+                continue
+            r = json.loads(raw); c = claims.get(str(r.get("entry_id")))
+            want = c.get("probability_commitment") if c else None
+            got = "sha256:" + hashlib.sha256(("%s|%.4f|%s" % (r.get("entry_id"), float(r.get("probability")), r.get("salt"))).encode()).hexdigest()
+            if not want or got != want:
+                errors.append(f"  reveals.jsonl line {n}: {r.get('entry_id')!r} does not hash to a commitment in the register")
+            else:
+                revealed[str(r["entry_id"])] = r
+    except FileNotFoundError:
+        pass
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        errors.append(f"  reveals.jsonl: unreadable ({e})")
 
     try:
         lines = open(grades_path).readlines()
@@ -399,6 +454,8 @@ def validate_grades(grades_path, register_path):
                 err(f"{f} must be a non-empty string")
 
         p = claim.get("probability")
+        if p is None and claim.get("probability_commitment"):
+            p = revealed.get(eid, {}).get("probability")      # a sealed entry is graded on its revealed number
         if g["outcome"] == "void":
             if g["brier"] is not None:
                 err("void grades carry brier null and are excluded from the running mean")
@@ -440,7 +497,7 @@ def validate_grades(grades_path, register_path):
     return 0
 
 
-ANNOTATION_TYPES = {"disclosure", "pending_verification", "amendment"}
+ANNOTATION_TYPES = {"disclosure", "pending_verification", "amendment", "void_commitment"}
 AMENDABLE = {"falsifier"}   # an amendment never touches the claim, the probability or the date
 
 
@@ -448,8 +505,10 @@ def validate_annotations(path, register_path):
     """Dated records about a claim that are neither the claim nor its grade: a per-entry
     disclosure, a resolution held pending verification, an amendment. Append-only."""
     errors, ids, count = [], set(), 0
+    sealed_ids = set()
     try:
         ids = {str(json.loads(l).get("id")) for l in open(register_path) if l.strip()}
+        sealed_ids = {str(json.loads(l).get("id")) for l in open(register_path) if l.strip() and json.loads(l).get("probability_commitment")}
     except (FileNotFoundError, json.JSONDecodeError):
         pass
     try:
@@ -475,6 +534,12 @@ def validate_annotations(path, register_path):
             err(f"date {a.get('date')!r} is not an ISO date")
         if a.get("type") not in ANNOTATION_TYPES:
             err(f"type {a.get('type')!r} not in {sorted(ANNOTATION_TYPES)}")
+        if a.get("type") == "void_commitment":
+            # A sealed number that can no longer be proven. Public, permanent, scored as Brier 1.0.
+            if a.get("entry_id") not in sealed_ids:
+                err("void_commitment is only for an entry logged with a probability_commitment")
+            if a.get("text") != "void: commitment unverifiable":
+                err("a void_commitment annotation reads exactly 'void: commitment unverifiable'")
         if a.get("type") == "amendment" and a.get("field") not in AMENDABLE:
             err(f"an amendment names the field it amends, one of {sorted(AMENDABLE)}")
     if errors:

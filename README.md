@@ -11,7 +11,7 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 |---|---|---|---|
 | `id` | string | yes | `YYYY-MM-NNN`, e.g. `2026-09-001`. Unique. Never reused, not even for a voided entry. |
 | `issue` | string | yes | Issue number as a zero-padded string, e.g. `01`. |
-| `date_logged` | string | yes | ISO 8601 date, `YYYY-MM-DD`. The date the claim was published, not the date it was drafted. |
+| `date_logged` | string | yes | ISO 8601 date, `YYYY-MM-DD`. The date the claim entered this file, which the git history proves; not the date it was drafted. A forecast first made public elsewhere carries that earlier moment in `first_public_at`, never in this field. |
 | `claim` | string | yes | One sentence. Unambiguous. Must pass the claim wording test below. |
 | `probability` | number \| string | yes | Float in `[0,1]`, or the literal string `TBD_KEVIN`. Claude always writes `TBD_KEVIN`. **Stored precise, rendered rounded**: the entry keeps the model's number (`0.634`); every page and issue shows it to the nearest 5% (`65%`), never a decimal. Brier is computed on the stored number. |
 | `resolution_date` | string | yes | ISO 8601. The date the claim gets graded, whether or not the outcome is obvious by then. |
@@ -26,6 +26,8 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 | `reference_class` | string | with `RC` | One line naming the base-rate population and the adjustment applied. |
 | `sector` | enum | yes | `space` \| `defense` \| `energy` \| `cross`. The publication's scope since 13 Sep 2026; Brier is reported by sector as well as overall. `cross` only where the claim genuinely spans sectors. |
 | `supersedes` | string | no | The `id` of an entry this corrects. Present only on correcting entries. |
+| `first_public_url` | string | no | Where the forecast was first made public before it entered this file (an X post, a talk recording). `https://`. Present only with `first_public_at`. Added 2026-10-22. |
+| `first_public_at` | string | no | UTC, `YYYY-MM-DDTHH:MM:SSZ`. Not after `date_logged`. For an X status URL it must equal the time in the status id (`(id >> 22) + 1288834974657` ms); the validator checks it. Sites show both dates. |
 | `resolution_urls` | list of strings | no | The concrete pages the resolution will be checked against. `scripts/snapshot_resolution_sources.py` archives and renders each one into `evidence/<id>/` with hashes, monthly and on logging. `resolution_source` remains the prose a reader sees. |
 
 ## Rules
@@ -114,6 +116,17 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 
    A resolved entry can never be superseded. Neither can an entry already superseded by
    another — one correction, or the claim was not salvageable and should be `void`.
+
+## Public mirror
+
+The public mirror carries the claim file, the grade file and the annotations file. From
+2026-10-22, claim lines publish their public fields only: the claim, falsifier, probability,
+dates, method and its sub-field, sector, resolution source and the Spanish wording. The internal
+`notes` field is replaced by a fixed marker saying it was withheld. Lines published before that
+date stay exactly as they were published, because the mirror is append-only like this file.
+Grades, including Kevin's observation and note, and annotations are published whole.
+`scripts/public_register.py` builds the mirror's claim file and refuses if the mirror has
+drifted from the source.
 
 ## Claim wording test
 
