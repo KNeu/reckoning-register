@@ -21,9 +21,10 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
 | `resolved_on` | string \| null | yes | ISO 8601 once resolved, else `null`. |
 | `brier` | number \| null | yes | Brier score once resolved, else `null`. `(p - outcome)^2`, outcome ∈ {0,1}. |
 | `notes` | string | yes | Reasoning, evidence summary, and any caveat. May be empty string. |
-| `method` | enum | yes | `MC` (Monte Carlo) or `RC` (reference class). Exactly one, with its matching sub-field below. Grading is method-blind: one Brier number over all resolved entries, never a per-method score. |
+| `method` | enum | yes | `MC` (Monte Carlo), `RC` (reference class) or `SM` (scenario model, added 2026-10-27). Exactly one, with its matching sub-field below. Grading is method-blind: one Brier number over all resolved entries, never a per-method score. |
 | `inputs` | string | with `MC` | One line naming the modelled variables and their sources. The model stays private; only the input names are published. |
 | `reference_class` | string | with `RC` | One line naming the base-rate population and the adjustment applied. |
+| `scenarios` | string | with `SM` | One line naming each scenario, its weight and the share of it that clears the claim, and the weighted total. Rendered as "Scenario model", never as Monte Carlo. |
 | `sector` | enum | yes | `space` \| `defense` \| `energy` \| `cross`. The publication's scope since 13 Sep 2026; Brier is reported by sector as well as overall. `cross` only where the claim genuinely spans sectors. |
 | `supersedes` | string | no | The `id` of an entry this corrects. Present only on correcting entries. |
 | `first_public_url` | string | no | Where the forecast was first made public before it entered this file (an X post, a talk recording). `https://`. Present only with `first_public_at`. Added 2026-10-22. |
@@ -92,7 +93,7 @@ forecast is dated, probability-weighted, falsifiable, and re-graded in public.
    entry), `pending_verification` (the resolution date has passed and the outcome is being
    confirmed; replaced by the grade), `amendment` (with `field`, currently only
    `falsifier`, and a `reason`), `void_commitment` (a sealed number that can no longer be
-   proven), and `note` (a dated note on how an entry is shown, never on what it says). An amendment never changes the claim, the probability or the
+   proven), `note` (a dated note on how an entry is shown, never on what it says), and `source` (a source added after logging, with its `url`; the claim line is never edited to add one). An amendment never changes the claim, the probability or the
    date. The claim line stays as logged and the amendment is shown beside it.
    `scripts/validate_register.py --annotations` checks the file.
 

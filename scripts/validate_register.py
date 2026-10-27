@@ -22,7 +22,9 @@ REQUIRED = [
     "resolution_date", "falsifier", "resolution_source",
     "status", "resolved_on", "brier", "notes", "sector", "method",
 ]
-METHODS = {"MC": "inputs", "RC": "reference_class"}
+# SM (scenario model, added 2026-10-27): a few weighted scenarios, each with a share that clears
+# the claim. Not a Monte Carlo, so it is never labelled one.
+METHODS = {"MC": "inputs", "RC": "reference_class", "SM": "scenarios"}
 # The publication covers three sectors (13 Sep 2026). Every claim names one, or "cross" where
 # the claim genuinely spans them; the calibration page reports Brier by sector.
 SECTORS = {"space", "defense", "energy", "cross"}
@@ -32,7 +34,7 @@ SECTORS = {"space", "defense", "energy", "cross"}
 # resolution_urls: the concrete pages scripts/snapshot_resolution_sources.py archives and renders
 # as evidence; resolution_source stays the reader-facing prose.
 OPTIONAL = ["supersedes", "claim_es", "falsifier_es", "resolution_urls", "inputs", "reference_class",
-            "inputs_es", "reference_class_es", "probability_commitment",
+            "inputs_es", "reference_class_es", "scenarios", "scenarios_es", "probability_commitment",
             "first_public_url", "first_public_at"]
 # first_public_url / first_public_at (approved 2026-10-22): a forecast first made public
 # elsewhere (an X post, a talk) before it entered this file. date_logged stays the append date —
@@ -244,11 +246,12 @@ def check(obj, lineno, live, seen_ids, errors):
     if m not in METHODS:
         err(f"method {m!r} not in {sorted(METHODS)}")
     else:
-        need = METHODS[m]; other = "reference_class" if need == "inputs" else "inputs"
+        need = METHODS[m]
         if not isinstance(obj.get(need), str) or not obj.get(need, "").strip():
             err(f"method {m} requires a non-empty '{need}' line")
-        if obj.get(other):
-            err(f"method {m} must not carry '{other}' — exactly one method, one sub-field")
+        for other in sorted(set(METHODS.values()) - {need}):
+            if obj.get(other):
+                err(f"method {m} must not carry '{other}' — exactly one method, one sub-field")
 
     if obj["sector"] not in SECTORS:
         err(f"sector {obj['sector']!r} not in {sorted(SECTORS)}")
@@ -497,7 +500,7 @@ def validate_grades(grades_path, register_path):
     return 0
 
 
-ANNOTATION_TYPES = {"disclosure", "pending_verification", "amendment", "void_commitment", "note"}
+ANNOTATION_TYPES = {"disclosure", "pending_verification", "amendment", "void_commitment", "note", "source"}
 AMENDABLE = {"falsifier"}   # an amendment never touches the claim, the probability or the date
 
 
@@ -540,6 +543,8 @@ def validate_annotations(path, register_path):
                 err("void_commitment is only for an entry logged with a probability_commitment")
             if a.get("text") != "void: commitment unverifiable":
                 err("a void_commitment annotation reads exactly 'void: commitment unverifiable'")
+        if a.get("type") == "source" and not str(a.get("url", "")).startswith("https://"):
+            err("a source annotation carries the source's https:// url")
         if a.get("type") == "amendment" and a.get("field") not in AMENDABLE:
             err(f"an amendment names the field it amends, one of {sorted(AMENDABLE)}")
     if errors:
